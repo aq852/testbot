@@ -1,0 +1,80 @@
+Exit code: 0
+Wall time: 0.8 seconds
+Output:
+from __future__ import annotations
+
+from aiogram import F, Router
+from aiogram.filters import Command, CommandObject
+from aiogram.types import CallbackQuery, Message
+from bson import ObjectId
+
+from app.database import Database
+from app.keyboards.search import search_results
+
+router = Router(name="common")
+
+
+def human_size(size: int) -> str:
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{size} B"
+        size /= 1024
+    return "0 B"
+
+
+@router.message(Command("start"))
+async def start(message: Message, db: Database) -> None:
+    if message.from_user:
+        await db.upsert_user(message.from_user.id, message.from_user.full_name, message.from_user.username)
+    await message.answer("<b>Welcome to TeleVault</b>\n\nSearch your library with <code>/search title</code>.\nUse <code>/request title</code> when a file is missing.")
+
+
+@router.message(Command("help"))
+async def help_command(message: Message) -> None:
+    await message.answer("<b>TeleVault commands</b>\n/search &lt;title&gt; â€” find a file\n/request &lt;title&gt; â€” request a title\n/profile â€” view your access\n\nAdmins: /stats, /broadcast (reply to a message)")
+
+
+@router.message(Command("search"))
+async def search(message: Message, command: CommandObject, db: Database) -> None:
+    query = (command.args or "").strip()
+    if len(query) < 2:
+        await message.answer("Usage: <code>/search movie or series name</code>")
+        return
+    files = await db.search_files(query)
+    if not files:
+        await message.answer("No matching files found. Use <code>/request title</code> to request it.")
+        return
+    await message.answer(f"<b>Results for:</b> {query}", reply_markup=search_results(files))
+
+
+@router.callback_query(F.data.startswith("file:"))
+async def deliver_file(callback: CallbackQuery, db: Database) -> None:
+    raw_id = callback.data.removeprefix("file:") if callback.data else ""
+    if not ObjectId.is_valid(raw_id):
+        await callback.answer("This file link has expired.", show_alert=True)
+        return
+    item = await db.db.files.find_one({"_id": ObjectId(raw_id)})
+    if not item or not callback.message:
+        await callback.answer("File not found.", show_alert=True)
+        return
+    await callback.message.bot.copy_message(callback.from_user.id, item["chat_id"], item["message_id"])
+    await callback.answer("Sent in private chat.")
+
+
+@router.message(Command("request"))
+async def request_file(message: Message, command: CommandObject, db: Database) -> None:
+    query = (command.args or "").strip()
+    if len(query) < 2:
+        await message.answer("Usage: <code>/request title</code>")
+        return
+    await db.create_request(message.from_user.id, query)
+    await message.answer("Your request has been saved. Weâ€™ll notify you when it is added.")
+
+
+@router.message(Command("profile"))
+async def profile(message: Message, db: Database) -> None:
+    user = await db.db.users.find_one({"user_id": message.from_user.id})
+    tier = "Premium" if user and user.get("is_premium") else "Free"
+    await message.answer(f"<b>TeleVault profile</b>\nAccess: <b>{tier}</b>")
+
+
