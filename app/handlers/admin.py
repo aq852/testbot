@@ -1,10 +1,10 @@
 Exit code: 0
-Wall time: 1.1 seconds
+Wall time: 1 seconds
 Output:
 from __future__ import annotations
 
 from aiogram import Router
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from app.config import Settings
@@ -41,4 +41,41 @@ async def broadcast(message: Message, db: Database, settings: Settings) -> None:
             failed += 1
     await message.answer(f"Broadcast complete. Sent: {sent}; failed: {failed}.")
 
+
+@router.message(Command("ban"))
+async def ban(message: Message, command: CommandObject, db: Database, settings: Settings) -> None:
+    if not is_admin(message, settings):
+        return
+    try:
+        user_id = int(command.args or "")
+    except ValueError:
+        await message.answer("Usage: <code>/ban user_id</code>")
+        return
+    await db.set_ban(user_id, True)
+    await message.answer(f"User <code>{user_id}</code> has been banned.")
+
+
+@router.message(Command("unban"))
+async def unban(message: Message, command: CommandObject, db: Database, settings: Settings) -> None:
+    if not is_admin(message, settings):
+        return
+    try:
+        user_id = int(command.args or "")
+    except ValueError:
+        await message.answer("Usage: <code>/unban user_id</code>")
+        return
+    await db.set_ban(user_id, False)
+    await message.answer(f"User <code>{user_id}</code> has been unbanned.")
+
+
+@router.message(Command("maintenance"))
+async def maintenance(message: Message, command: CommandObject, db: Database, settings: Settings) -> None:
+    if not is_admin(message, settings):
+        return
+    option = (command.args or "").casefold()
+    if option not in {"on", "off"}:
+        await message.answer("Usage: <code>/maintenance on</code> or <code>/maintenance off</code>")
+        return
+    await db.set_maintenance(option == "on")
+    await message.answer(f"Maintenance mode is now <b>{option}</b>.")
 
