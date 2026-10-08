@@ -1,5 +1,5 @@
 Exit code: 0
-Wall time: 0.9 seconds
+Wall time: 1.2 seconds
 Output:
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import CallbackQuery, Message
 from bson import ObjectId
 
+from app.config import Settings
 from app.database import Database
 from app.keyboards.search import search_results
 
@@ -23,10 +24,18 @@ def human_size(size: int) -> str:
 
 
 @router.message(Command("start"))
-async def start(message: Message, command: CommandObject, db: Database) -> None:
+async def start(message: Message, command: CommandObject, db: Database, settings: Settings) -> None:
     if message.from_user:
         await db.upsert_user(message.from_user.id, message.from_user.full_name, message.from_user.username)
     payload = command.args or ""
+    if payload.startswith("ref_"):
+        try:
+            referrer_id = int(payload.removeprefix("ref_"))
+        except ValueError:
+            referrer_id = 0
+        if referrer_id and await db.claim_referral(referrer_id, message.from_user.id, settings.referral_reward_days):
+            await message.answer("Referral accepted. Your friend received their premium reward.")
+            return
     if payload.startswith("batch_"):
         batch = await db.get_batch(payload.removeprefix("batch_"))
         if not batch:
@@ -37,6 +46,9 @@ async def start(message: Message, command: CommandObject, db: Database) -> None:
             if ObjectId.is_valid(raw_id):
                 item = await db.db.files.find_one({"_id": ObjectId(raw_id)})
                 if item:
+                    allowed, _ = await db.consume_delivery(message.from_user.id, settings.free_daily_file_limit)
+                    if not allowed:
+                        break
                     await message.bot.copy_message(message.from_user.id, item["chat_id"], item["message_id"])
                     delivered += 1
         await message.answer(f"Delivered {delivered} file(s) from your batch.")
@@ -63,7 +75,7 @@ async def search(message: Message, command: CommandObject, db: Database) -> None
 
 
 @router.callback_query(F.data.startswith("file:"))
-async def deliver_file(callback: CallbackQuery, db: Database) -> None:
+async def deliver_file(callback: CallbackQuery, db: Database, settings: Settings) -> None:
     raw_id = callback.data.removeprefix("file:") if callback.data else ""
     if not ObjectId.is_valid(raw_id):
         await callback.answer("This file link has expired.", show_alert=True)
@@ -72,12 +84,17 @@ async def deliver_file(callback: CallbackQuery, db: Database) -> None:
     if not item or not callback.message:
         await callback.answer("File not found.", show_alert=True)
         return
+    allowed, remaining = await db.consume_delivery(callback.from_user.id, settings.free_daily_file_limit)
+    if not allowed:
+        await callback.answer("Your daily free download limit is reached. Use /plan for premium access.", show_alert=True)
+        return
     try:
         await callback.message.bot.copy_message(callback.from_user.id, item["chat_id"], item["message_id"])
     except Exception:
         await callback.answer("Start the bot in private chat first, then try again.", show_alert=True)
         return
-    await callback.answer("Sent in private chat.")
+    suffix = "" if remaining < 0 else f" {remaining} free delivery(ies) left today."
+    await callback.answer(f"Sent in private chat.{suffix}")
 
 
 @router.callback_query(F.data.startswith("batch:add:"))
@@ -111,8 +128,22 @@ async def request_file(message: Message, command: CommandObject, db: Database) -
 
 
 @router.message(Command("profile"))
-async def profile(message: Message, db: Database) -> None:
-    user = await db.db.users.find_one({"user_id": message.from_user.id})
-    tier = "Premium" if user and user.get("is_premium") else "Free"
-    await message.answer(f"<b>TeleVault profile</b>\nAccess: <b>{tier}</b>")
+async def profile(message: Message, db: Database, settings: Settings) -> None:
+    premium, remaining, expiry = await db.get_access(message.from_user.id, settings.free_daily_file_limit)
+    tier = "Premium" if premium else "Free"
+    detail = "Unlimited deliveries" if premium else f"{remaining}/{settings.free_daily_file_limit} free deliveries remaining today"
+    if premium and expiry:
+        detail += f"\nPremium until: {expiry:%d %b %Y}"
+    await message.answer(f"<b>TeleVault profile</b>\nAccess: <b>{tier}</b>\n{detail}")
+
+
+@router.message(Command("plan"))
+async def plan(message: Message, settings: Settings) -> None:
+    await message.answer(f"<b>TeleVault Premium</b>\nPremium members have unlimited deliveries. Free members receive {settings.free_daily_file_limit} per day. Contact an admin to purchase or use <code>/refer</code> to earn {settings.referral_reward_days} premium days per referral.")
+
+
+@router.message(Command("refer"))
+async def refer(message: Message, settings: Settings) -> None:
+    me = await message.bot.get_me()
+    await message.answer(f"Invite link:\nhttps://t.me/{me.username}?start=ref_{message.from_user.id}\n\nYou receive {settings.referral_reward_days} premium days when a new user starts the bot with this link.")
 
