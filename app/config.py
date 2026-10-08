@@ -1,5 +1,5 @@
 Exit code: 0
-Wall time: 1 seconds
+Wall time: 0.7 seconds
 Output:
 from __future__ import annotations
 
@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     log_channel_id: int | None = Field(default=None, alias="LOG_CHANNEL_ID")
     force_sub_channels: list[int] = Field(default_factory=list, alias="FORCE_SUB_CHANNELS")
     source_channels: list[int] = Field(default_factory=list, alias="SOURCE_CHANNELS")
+    free_daily_file_limit: int = Field(default=5, ge=1, le=100, alias="FREE_DAILY_FILE_LIMIT")
+    referral_reward_days: int = Field(default=7, ge=1, le=365, alias="REFERRAL_REWARD_DAYS")
 
     @field_validator("admins", "force_sub_channels", "source_channels", mode="before")
     @classmethod
