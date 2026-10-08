@@ -1,5 +1,5 @@
 Exit code: 0
-Wall time: 0.8 seconds
+Wall time: 0.9 seconds
 Output:
 from __future__ import annotations
 
@@ -23,10 +23,25 @@ def human_size(size: int) -> str:
 
 
 @router.message(Command("start"))
-async def start(message: Message, db: Database) -> None:
+async def start(message: Message, command: CommandObject, db: Database) -> None:
     if message.from_user:
         await db.upsert_user(message.from_user.id, message.from_user.full_name, message.from_user.username)
-    await message.answer("<b>Welcome to TeleVault</b>\n\nSearch your library with <code>/search title</code>.\nUse <code>/request title</code> when a file is missing.")
+    payload = command.args or ""
+    if payload.startswith("batch_"):
+        batch = await db.get_batch(payload.removeprefix("batch_"))
+        if not batch:
+            await message.answer("This batch link is expired or invalid.")
+            return
+        delivered = 0
+        for raw_id in batch["file_ids"]:
+            if ObjectId.is_valid(raw_id):
+                item = await db.db.files.find_one({"_id": ObjectId(raw_id)})
+                if item:
+                    await message.bot.copy_message(message.from_user.id, item["chat_id"], item["message_id"])
+                    delivered += 1
+        await message.answer(f"Delivered {delivered} file(s) from your batch.")
+        return
+    await message.answer("<b>Welcome to TeleVault</b>\n\nSearch your library with <code>/search title</code>.\nUse <code>/request title</code> when a file is missing.\n\nUse <code>/batch_done</code> after adding files to create a batch link.")
 
 
 @router.message(Command("help"))
@@ -57,8 +72,32 @@ async def deliver_file(callback: CallbackQuery, db: Database) -> None:
     if not item or not callback.message:
         await callback.answer("File not found.", show_alert=True)
         return
-    await callback.message.bot.copy_message(callback.from_user.id, item["chat_id"], item["message_id"])
+    try:
+        await callback.message.bot.copy_message(callback.from_user.id, item["chat_id"], item["message_id"])
+    except Exception:
+        await callback.answer("Start the bot in private chat first, then try again.", show_alert=True)
+        return
     await callback.answer("Sent in private chat.")
+
+
+@router.callback_query(F.data.startswith("batch:add:"))
+async def add_to_batch(callback: CallbackQuery, db: Database) -> None:
+    raw_id = callback.data.removeprefix("batch:add:") if callback.data else ""
+    if not ObjectId.is_valid(raw_id):
+        await callback.answer("This file link has expired.", show_alert=True)
+        return
+    count = await db.add_to_batch(callback.from_user.id, raw_id)
+    await callback.answer(f"Added to your batch ({count} file(s)).")
+
+
+@router.message(Command("batch_done"))
+async def batch_done(message: Message, db: Database) -> None:
+    batch = await db.finish_batch(message.from_user.id)
+    if not batch:
+        await message.answer("Your batch is empty. Search for files and use Add to batch first.")
+        return
+    me = await message.bot.get_me()
+    await message.answer(f"Your batch link (valid for 24 hours):\nhttps://t.me/{me.username}?start=batch_{batch['batch_id']}")
 
 
 @router.message(Command("request"))
@@ -76,5 +115,4 @@ async def profile(message: Message, db: Database) -> None:
     user = await db.db.users.find_one({"user_id": message.from_user.id})
     tier = "Premium" if user and user.get("is_premium") else "Free"
     await message.answer(f"<b>TeleVault profile</b>\nAccess: <b>{tier}</b>")
-
 
