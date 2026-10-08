@@ -1,0 +1,10 @@
+Exit code: 0
+Wall time: 1.1 seconds
+Output:
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+
