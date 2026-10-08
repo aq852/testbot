@@ -1,5 +1,5 @@
 Exit code: 0
-Wall time: 0.8 seconds
+Wall time: 0.9 seconds
 Output:
 # TeleVault
 
@@ -13,6 +13,7 @@ TeleVault is a self-hosted Telegram bot for building a private, searchable media
 - Admin statistics and reply-based broadcasts
 - Source-channel allowlist, force-subscription, bans, and maintenance mode
 - 24-hour batch links built from search results
+- Premium expiry, referral rewards, and configurable daily free-delivery limits
 - MongoDB-backed persistence with indexes
 
 ## Planned modules
@@ -25,6 +26,11 @@ The data model is intentionally small so we can add premium plans, referrals, cl
 2. Install dependencies: `python -m pip install -r requirements.txt`
 3. Start the bot: `python -m app.main`
 4. Add the bot as an administrator to each source channel. New media posts will be indexed automatically.
+
+## Access commands
+
+- Users: `/plan`, `/refer`, and `/profile`
+- Admins: `/premium user_id days` and `/removepremium user_id`
 
 ## Safety
 
