@@ -1,0 +1,9 @@
+Exit code: 0
+Wall time: 1.2 seconds
+Output:
+aiogram>=3.17,<4
+motor>=3.7,<4
+pydantic-settings>=2.7,<3
+uvloop>=0.21; sys_platform != "win32"
+
+
