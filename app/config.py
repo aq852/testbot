@@ -1,5 +1,5 @@
 Exit code: 0
-Wall time: 1.2 seconds
+Wall time: 1 seconds
 Output:
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", enable_decoding=False)
 
     bot_token: str = Field(alias="BOT_TOKEN")
     api_id: int = Field(alias="API_ID")
@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     admins: list[int] = Field(default_factory=list, alias="ADMINS")
     log_channel_id: int | None = Field(default=None, alias="LOG_CHANNEL_ID")
     force_sub_channels: list[int] = Field(default_factory=list, alias="FORCE_SUB_CHANNELS")
+    source_channels: list[int] = Field(default_factory=list, alias="SOURCE_CHANNELS")
 
-    @field_validator("admins", "force_sub_channels", mode="before")
+    @field_validator("admins", "force_sub_channels", "source_channels", mode="before")
     @classmethod
     def parse_id_list(cls, value: object) -> list[int]:
         if value in (None, ""):
@@ -34,5 +35,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
 
