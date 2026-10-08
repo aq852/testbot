@@ -1,5 +1,5 @@
 Exit code: 0
-Wall time: 1.2 seconds
+Wall time: 0.8 seconds
 Output:
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from aiogram.enums import ParseMode
 from app.config import get_settings
 from app.database import Database
 from app.handlers import admin, common, indexing
+from app.middlewares.access import AccessMiddleware
 
 
 async def main() -> None:
@@ -22,6 +23,9 @@ async def main() -> None:
     await db.ensure_indexes()
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dispatcher = Dispatcher(settings=settings, db=db)
+    access = AccessMiddleware()
+    dispatcher.message.outer_middleware(access)
+    dispatcher.callback_query.outer_middleware(access)
     dispatcher.include_routers(admin.router, common.router, indexing.router)
     try:
         await dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types())
@@ -32,5 +36,4 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
 
